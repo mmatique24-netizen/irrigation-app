@@ -94,7 +94,7 @@ if uploaded_file:
                 if dist < min_dist:
                     min_dist = dist
                     best_path = perm
-            return best_path, min_dist
+            return list(best_path), min_dist  # تحويل tuple إلى قائمة
 
         tsp_path, tsp_len = tsp_brute_force(final_CHs)
         st.write(f"🚁 طول مسار الدرون المثالي (TSP) = {tsp_len:.2f} m")
@@ -121,14 +121,14 @@ if uploaded_file:
         st.dataframe(ch_agg[['CH_id', 'Predicted_Ir']])
 
         # ===== Base Station =====
-        BS_POSITION = np.array([[FIELD_SIZE/2, FIELD_SIZE + 10]])
+        BS_POSITION = np.array([[FIELD_SIZE/2, FIELD_SIZE + 10]])  # شكل (1,2) لتوافق np.vstack
 
         # ===== إعداد الجولات =====
         num_rounds = 3  # عدد الجولات
         round_duration = 1  # دقيقة لكل جولة
         start_time = pd.Timestamp("2025-01-01 08:00:00")
 
-        # ===== رسم مسار الدرون لجميع الجولات =====
+        # ===== رسم المسار لكل الجولات =====
         fig, ax = plt.subplots(figsize=(8,8))
         ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, s=80, label='Sensors')
         ax.scatter(final_CHs[:,0], final_CHs[:,1], c='green', s=120, marker='X', edgecolor='black', label='CHs')
@@ -138,18 +138,9 @@ if uploaded_file:
         all_rows = []
 
         for rnd in range(1, num_rounds+1):
-            path_points = np.vstack([BS_POSITION, final_CHs[tsp_path], BS_POSITION])
-            ax.plot(path_points[:,0], path_points[:,1], linestyle='-', marker='o', color=colors(rnd-1), label=f'Round {rnd}')
-
-            # تلوين CH حسب Predicted_Ir
-            ch_colors = []
-            for ch in final_CHs[tsp_path]:
-                ch_idx = np.where(np.all(np.isclose(final_CHs, ch, atol=1e-8), axis=1))[0][0]
-                ir = ch_agg.loc[ch_agg['CH_id']==ch_idx,'Predicted_Ir'].values[0]
-                if ir > 1.5: ch_colors.append('red')
-                elif ir < 0.5: ch_colors.append('green')
-                else: ch_colors.append('yellow')
-            ax.scatter(final_CHs[tsp_path,0], final_CHs[tsp_path,1], c=ch_colors, s=120, marker='X', edgecolor='black')
+            path_points = np.vstack([BS_POSITION, final_CHs[np.array(tsp_path)], BS_POSITION])
+            ax.plot(path_points[:,0], path_points[:,1], linestyle='-', marker='o',
+                    color=colors(rnd-1), label=f'Round {rnd}')
 
             # جدول المسار لكل الجولة
             for step, (current, nxt) in enumerate(zip(path_points[:-1], path_points[1:]), start=1):
@@ -179,7 +170,7 @@ if uploaded_file:
                 "Start_Time": start_time + pd.Timedelta(minutes=(rnd-1)*round_duration)
             })
 
-        ax.set_title(f"🚁 مسار الدرون لجميع الجولات ({num_rounds} جولات)", fontsize=14)
+        ax.set_title("🚁 مسار الدرون لجميع الجولات", fontsize=14)
         ax.set_xlabel("X (m)")
         ax.set_ylabel("Y (m)")
         ax.legend()
