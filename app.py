@@ -26,11 +26,11 @@ if uploaded_file:
     data = pd.read_csv(uploaded_file)
     st.success(f"✅ تم تحميل البيانات! شكل البيانات: {data.shape}")
 
-    required_cols = ["temperature", "humidity", "rainfall", "growth_stage"]
+    required_cols = ["temperature", "humidity", "rainfall"]
     if not all(col in data.columns for col in required_cols):
         st.error(f"الملف يجب أن يحتوي على الأعمدة: {required_cols}")
     else:
-        # ===== 3) معالجة البيانات كما في مشروعك =====
+        # ===== 3) معالجة البيانات =====
         df = data[required_cols].copy()
         df['moisture'] = 0.5 * df['humidity'] + 0.5 * df['rainfall']
         eps = 1e-8
