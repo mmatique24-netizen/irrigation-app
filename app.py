@@ -122,76 +122,95 @@ if uploaded_file:
         # ===== 11) رسم مسار الدرون الديناميكي + Base Station + جدول دوري =====
         BS = np.array([[FIELD_SIZE/2, FIELD_SIZE + 10]])  # Base Station
         drone_tour_order = list(tsp_path) + ["BS"]
+        # ===== Sidebar TDMA Settings =====
+st.sidebar.header("تفاعلية مسار الدرون مع TDMA")
+cycle_duration = st.sidebar.number_input("مدة الدورة الزمنية لكل دورة (دقيقة)", min_value=1, value=20)
+total_hours = st.sidebar.number_input("إجمالي ساعات التشغيل", min_value=1, value=3)
+total_cycles = (total_hours * 60) // cycle_duration
+st.sidebar.write(f"عدد الدورات الكلي = {total_cycles}")
 
-        st.sidebar.header("عرض مسار الدرون الديناميكي")
-        show_drone_path = st.sidebar.checkbox("عرض مسار الدرون خطوة خطوة مع IR وعودة إلى BS", value=True)
+# ===== Slider لاختيار الدورة الحالية =====
+cycle_idx = st.sidebar.slider("اختر الدورة الزمنية (Cycle)", 1, total_cycles, 1)
 
-        if show_drone_path:
-            st.subheader("🚁 مسار الدرون خطوة خطوة مع تغير IR وعودة إلى Base Station")
-            max_cycle = len(drone_tour_order)
-            cycle_idx = st.slider("اختر الدورة الزمنية (Cycle)", 1, max_cycle, 1)
+# ===== حساب عدد CHs لكل دورة =====
+ch_per_cycle = len(tsp_path) // total_cycles
+if ch_per_cycle == 0:
+    ch_per_cycle = 1
 
-            fig, ax = plt.subplots(figsize=(8,8))
-            ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, label='Sensors')
-            ax.scatter(BS[:,0], BS[:,1], c='purple', s=150, marker='*', label='Base Station')
+# تحديد CHs التي سيتم زيارتها في الدورة الحالية
+end_idx = min(cycle_idx * ch_per_cycle, len(tsp_path))
+current_CHs = tsp_path[:end_idx]
 
-            # تلوين CHs حسب IR إذا تم زيارتها
-            colors = []
-            for idx in range(len(final_CHs)):
-                if idx in tsp_path[:cycle_idx]:
-                    ir = ch_agg.loc[ch_agg['CH_id'] == idx, 'Predicted_Ir'].values[0]
-                    if ir > 2.0:
-                        colors.append('red')
-                    elif ir < 1.0:
-                        colors.append('green')
-                    else:
-                        colors.append('yellow')
-                else:
-                    colors.append('gray')
-            ax.scatter(final_CHs[:,0], final_CHs[:,1], c=colors, s=120, marker='X', label='CHs')
+# ===== رسم المسار الديناميكي مع TDMA =====
+fig, ax = plt.subplots(figsize=(8,8))
+clusters = np.array(sensor_to_CH)
+ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c=clusters, cmap='tab20', alpha=0.6, s=80, label='Sensors')
+ax.scatter(final_CHs[:,0], final_CHs[:,1], c='green', s=120, marker='X', edgecolor='black', label='CHs')
+ax.scatter(BS[0,0], BS[0,1], c='red', s=150, marker='*', label='Base Station')
 
-            # مسار الدرون حتى الدورة الحالية
-            path_points = final_CHs[list(tsp_path)[:cycle_idx]]
-            if cycle_idx > len(tsp_path):
-                path_points = np.vstack([path_points, BS])
-            ax.plot(path_points[:,0], path_points[:,1], c='black', linestyle='-', marker='o', label='Drone Path')
+# تلوين CHs حسب IR إذا تم زيارتها حتى الدورة الحالية
+colors = []
+for idx in range(len(final_CHs)):
+    if idx in current_CHs:
+        ir = ch_agg.loc[ch_agg['CH_id'] == idx, 'Predicted_Ir'].values[0]
+        if ir > 2.0:
+            colors.append('red')
+        elif ir < 1.0:
+            colors.append('green')
+        else:
+            colors.append('yellow')
+    else:
+        colors.append('gray')
+ax.scatter(final_CHs[:,0], final_CHs[:,1], c=colors, s=120, marker='X', label='CHs')
 
-            # رسم اتصال الدرون بالـ BS بعد آخر CH مرورًا بالمسار
-            if cycle_idx > 0 and cycle_idx <= len(tsp_path):
-                last_ch_idx = tsp_path[cycle_idx-1]
-                last_ch = final_CHs[last_ch_idx]
-                ax.plot([last_ch[0], BS[0,0]], [last_ch[1], BS[0,1]], c='blue', linestyle='--', linewidth=2, label='Drone → BS')
+# رسم مسار الدرون حتى الدورة الحالية + العودة إلى BS
+if len(current_CHs) > 0:
+    path_points = final_CHs[current_CHs]
+    path_points = np.vstack([path_points, BS])
+    ax.plot(path_points[:,0], path_points[:,1], c='black', linestyle='-', marker='o', label='Drone Path')
+    
+    # اتصال آخر CH بالـ BS
+    last_ch = final_CHs[current_CHs[-1]]
+    ax.plot([last_ch[0], BS[0,0]], [last_ch[1], BS[0,1]], c='blue', linestyle='--', linewidth=2, label='Drone → BS')
 
-            # دائرة TX_RANGE لكل CH
-            for ch in final_CHs:
-                circle = Circle((ch[0], ch[1]), TX_RANGE, color='green', alpha=0.1)
-                ax.add_patch(circle)
+# دائرة TX_RANGE لكل CH
+for ch in final_CHs:
+    circle = Circle((ch[0], ch[1]), TX_RANGE, color='green', alpha=0.1)
+    ax.add_patch(circle)
 
-            ax.set_title(f"Cycle {cycle_idx}/{max_cycle} - Drone Tour, CH IR & Base Station")
-            ax.set_xlabel("X (m)")
-            ax.set_ylabel("Y (m)")
-            ax.legend(loc='upper right')
-            st.pyplot(fig)
+ax.set_title(f"Cycle {cycle_idx}/{total_cycles} - Drone Tour with TDMA & CH IR")
+ax.set_xlabel("X (m)")
+ax.set_ylabel("Y (m)")
+ax.legend(loc='upper right')
+ax.grid(True)
+ax.axis('equal')
+st.pyplot(fig)
 
-            # ===== عرض جدول دوري لمسار الدرون =====
-            tour_table = []
-            for i, stop in enumerate(drone_tour_order[:cycle_idx]):
-                if stop == "BS":
-                    tour_table.append({"Step": i+1, "Visited": "Base Station"})
-                else:
-                    ir = ch_agg.loc[ch_agg['CH_id'] == stop, 'Predicted_Ir'].values[0]
-                    tour_table.append({"Step": i+1, "Visited": f"CH {stop}", "Predicted_Ir": round(ir, 2)})
-            st.subheader("📋 جدول دوري لمسار الدرون")
-            st.table(pd.DataFrame(tour_table))
+# ===== جدول دوري لمسار الدرون =====
+tour_table = []
+for i, stop in enumerate(drone_tour_order[:end_idx] + ["BS"]):
+    if stop == "BS":
+        tour_table.append({"Step": i+1, "Visited": "Base Station"})
+    else:
+        ir = ch_agg.loc[ch_agg['CH_id'] == stop, 'Predicted_Ir'].values[0]
+        tour_table.append({"Step": i+1, "Visited": f"CH {stop}", "Predicted_Ir": round(ir, 2)})
 
-        # ===== 12) تنبيهات الري =====
-        st.subheader("⚠️ تنبيهات الري")
-        for i, row in ch_agg.iterrows():
-            ir = row['Predicted_Ir']
-            if ir > 2.0:
-                msg = "❌ رطوبة منخفضة — يلزم الري الفوري"
-            elif ir < 1.0:
-                msg = "✅ رطوبة مناسبة"
-            else:
-                msg = "⚠️ رطوبة معتدلة — راقب الحقل"
-            st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
+st.subheader("📋 جدول دوري لمسار الدرون")
+st.table(pd.DataFrame(tour_table))
+
+
+       
+               
+
+       # ===== 11) تنبيهات الري (تم تعديل الحدود) =====
+st.subheader("⚠️ تنبيهات الري")
+for i, row in ch_agg.iterrows():
+    ir = row['Predicted_Ir']
+    if ir > 1.5:
+        msg = "❌ رطوبة منخفضة — يلزم الري الفوري"
+    elif 0.5 <= ir <= 1.5:
+        msg = "⚠️ رطوبة معتدلة — راقب الحقل"
+    else:  # ir < 0.5
+        msg = "✅ رطوبة مناسبة"
+    st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
+
