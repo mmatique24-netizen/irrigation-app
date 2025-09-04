@@ -271,4 +271,4 @@ if uploaded_file:
                 msg = "✅ رطوبة مناسبة"
 
             st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
-```
+
