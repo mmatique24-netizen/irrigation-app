@@ -170,6 +170,69 @@ if uploaded_file:
         df_cycles = pd.DataFrame(rows)
         st.subheader("📋 جدول مسار الدرون الكامل")
         st.dataframe(df_cycles)
+        # ===== إعداد الجولات =====
+num_rounds = 3  # عدد الجولات
+round_duration = 1  # دقيقة لكل جولة
+start_time = pd.Timestamp("2025-01-01 08:00:00")
+
+# ===== رسم المسار لكل الجولات =====
+fig, ax = plt.subplots(figsize=(8,8))
+ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, s=80, label='Sensors')
+ax.scatter(final_CHs[:,0], final_CHs[:,1], c='green', s=120, marker='X', edgecolor='black', label='CHs')
+ax.scatter(BS_POSITION[0], BS_POSITION[1], c='red', s=150, marker='*', label='Base Station')
+
+colors = plt.cm.get_cmap('tab10', num_rounds)
+
+all_rows = []
+for rnd in range(1, num_rounds+1):
+    path_points = [BS_POSITION] + [final_CHs[i] for i in tsp_path] + [BS_POSITION]
+    path_points = np.array(path_points)
+    ax.plot(path_points[:,0], path_points[:,1], linestyle='-', marker='o',
+            color=colors(rnd-1), label=f'Round {rnd}')
+    
+    # جدول المسار لكل الجولة
+    total_dist = 0
+    for step, (current, nxt) in enumerate(zip(path_points[:-1], path_points[1:]), start=1):
+        dist = np.linalg.norm(nxt-current)
+        total_dist += dist
+        pred_ir = "-"
+        match = np.where(np.all(np.isclose(final_CHs, current, atol=1e-8), axis=1))[0]
+        if match.size > 0:
+            ch_idx = match[0]
+            pred_ir = round(ch_agg.loc[ch_agg['CH_id']==ch_idx,'Predicted_Ir'].values[0],3)
+        all_rows.append({
+            "Round": rnd,
+            "Step": step,
+            "X": round(current[0],3),
+            "Y": round(current[1],3),
+            "Distance_to_next": round(dist,3),
+            "Predicted_Ir": pred_ir,
+            "Start_Time": start_time + pd.Timedelta(minutes=(rnd-1)*round_duration)
+        })
+    # خطوة العودة للـ BS
+    all_rows.append({
+        "Round": rnd,
+        "Step": len(path_points),
+        "X": round(path_points[-1][0],3),
+        "Y": round(path_points[-1][1],3),
+        "Distance_to_next": np.nan,
+        "Predicted_Ir": "-",
+        "Start_Time": start_time + pd.Timedelta(minutes=(rnd-1)*round_duration)
+    })
+
+ax.set_title("🚁 مسار الدرون لجميع الجولات (3 جولات)", fontsize=14)
+ax.set_xlabel("X (m)")
+ax.set_ylabel("Y (m)")
+ax.legend()
+ax.grid(True)
+ax.axis('equal')
+st.pyplot(fig)
+
+# ===== جدول الجولات =====
+df_rounds = pd.DataFrame(all_rows)
+st.subheader("📋 جدول مسار الدرون لكل الجولات")
+st.dataframe(df_rounds)
+
 
         # ===== تنبيهات الري =====
         st.subheader("⚠️ تنبيهات الري")
