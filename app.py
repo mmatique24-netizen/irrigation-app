@@ -123,76 +123,96 @@ if uploaded_file:
         BS = np.array([[FIELD_SIZE/2, FIELD_SIZE + 10]])  # Base Station
         drone_tour_order = list(tsp_path) + ["BS"]
 
-        # ===== Sidebar TDMA Settings =====
-        st.sidebar.header("تفاعلية مسار الدرون مع TDMA")
-        cycle_duration = st.sidebar.number_input("مدة الدورة الزمنية لكل دورة (دقيقة)", min_value=1, value=20)
-        total_hours = st.sidebar.number_input("إجمالي ساعات التشغيل", min_value=1, value=3)
-        total_cycles = (total_hours * 60) // cycle_duration
-        st.sidebar.write(f"عدد الدورات الكلي = {total_cycles}")
+        import streamlit as st
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import timedelta
 
-        # ===== Slider لاختيار الدورة الحالية =====
-        cycle_idx = st.sidebar.slider("اختر الدورة الزمنية (Cycle)", 1, total_cycles, 1)
+st.set_page_config(page_title="Drone TDMA Path", layout="wide")
+st.title("🌱 مسار الدرون الديناميكي مع TDMA")
 
-        # ===== حساب عدد CHs لكل دورة =====
-        ch_per_cycle = len(tsp_path) // total_cycles
-        if ch_per_cycle == 0:
-            ch_per_cycle = 1
+# ===== إعدادات TDMA =====
+cycle_duration = st.sidebar.number_input("مدة الدورة الزمنية لكل دورة (دقيقة)", min_value=1, value=20)
+total_hours = st.sidebar.number_input("إجمالي ساعات التشغيل", min_value=1, value=3)
+total_cycles = (total_hours*60)//cycle_duration
+st.sidebar.write(f"عدد الدورات الكلي = {total_cycles}")
 
-        # تحديد CHs التي سيتم زيارتها في الدورة الحالية
-        end_idx = min(cycle_idx * ch_per_cycle, len(tsp_path))
-        current_CHs = tsp_path[:end_idx]
+# ===== Slider لاختيار الدورة =====
+cycle_idx = st.sidebar.slider("اختر الدورة الزمنية (Cycle)", 1, total_cycles, 1)
 
-        # ===== رسم المسار الديناميكي مع TDMA =====
-        fig, ax = plt.subplots(figsize=(8,8))
-        clusters = np.array(sensor_to_CH)
-        ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c=clusters, cmap='tab20', alpha=0.6, s=80, label='Sensors')
-        ax.scatter(final_CHs[:,0], final_CHs[:,1], c='green', s=120, marker='X', edgecolor='black', label='CHs')
-        ax.scatter(BS[0,0], BS[0,1], c='red', s=150, marker='*', label='Base Station')
+# ===== Base Station =====
+BS_POSITION = np.array([[FIELD_SIZE/2, FIELD_SIZE + 10]])
 
-        colors = []
-        for idx in range(len(final_CHs)):
-            if idx in current_CHs:
-                ir = ch_agg.loc[ch_agg['CH_id'] == idx, 'Predicted_Ir'].values[0]
-                if ir > 2.0:
-                    colors.append('red')
-                elif ir < 1.0:
-                    colors.append('green')
-                else:
-                    colors.append('yellow')
-            else:
-                colors.append('gray')
-        ax.scatter(final_CHs[:,0], final_CHs[:,1], c=colors, s=120, marker='X', label='CHs')
+# ===== تقسيم CHs على الدورات =====
+cycle_CHs = np.array_split(tsp_path, total_cycles)
 
-        if len(current_CHs) > 0:
-            path_points = final_CHs[current_CHs]
-            path_points = np.vstack([path_points, BS])
-            ax.plot(path_points[:,0], path_points[:,1], c='black', linestyle='-', marker='o', label='Drone Path')
-            last_ch = final_CHs[current_CHs[-1]]
-            ax.plot([last_ch[0], BS[0,0]], [last_ch[1], BS[0,1]], c='blue', linestyle='--', linewidth=2, label='Drone → BS')
+# ===== رسم المسار لكل دورة =====
+fig, ax = plt.subplots(figsize=(8,8))
+ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, s=80, label='Sensors')
+ax.scatter(final_CHs[:,0], final_CHs[:,1], c='green', s=120, marker='X', edgecolor='black', label='CHs')
+ax.scatter(BS_POSITION[0,0], BS_POSITION[0,1], c='red', s=150, marker='*', label='Base Station')
 
-        for ch in final_CHs:
-            circle = Circle((ch[0], ch[1]), TX_RANGE, color='green', alpha=0.1)
-            ax.add_patch(circle)
+colors = plt.cm.get_cmap('tab10', total_cycles)  # ألوان لكل دورة
 
-        ax.set_title(f"Cycle {cycle_idx}/{total_cycles} - Drone Tour with TDMA & CH IR")
-        ax.set_xlabel("X (m)")
-        ax.set_ylabel("Y (m)")
-        ax.legend(loc='upper right')
-        ax.grid(True)
-        ax.axis('equal')
-        st.pyplot(fig)
+# رسم كل دورة
+for idx, ch_list in enumerate(cycle_CHs[:cycle_idx], start=1):
+    path_points = [BS_POSITION[0]] + [final_CHs[i] for i in ch_list] + [BS_POSITION[0]]
+    path_points = np.array(path_points)
+    ax.plot(path_points[:,0], path_points[:,1], linestyle='-', marker='o',
+            color=colors(idx-1), label=f'Cycle {idx}')
 
-        # ===== جدول دوري لمسار الدرون =====
-        tour_table = []
-        for i, stop in enumerate(drone_tour_order[:end_idx] + ["BS"]):
-            if stop == "BS":
-                tour_table.append({"Step": i+1, "Visited": "Base Station"})
-            else:
-                ir = ch_agg.loc[ch_agg['CH_id'] == stop, 'Predicted_Ir'].values[0]
-                tour_table.append({"Step": i+1, "Visited": f"CH {stop}", "Predicted_Ir": round(ir, 2)})
+ax.set_title(f"Drone Path with TDMA (Up to Cycle {cycle_idx})", fontsize=14)
+ax.set_xlabel("X (m)")
+ax.set_ylabel("Y (m)")
+ax.legend()
+ax.grid(True)
+ax.axis('equal')
+st.pyplot(fig)
 
-        st.subheader("📋 جدول دوري لمسار الدرون")
-        st.table(pd.DataFrame(tour_table))
+# ===== جدول الدورات =====
+rows = []
+start_time = pd.Timestamp("2025-01-01 08:00:00")
+
+for idx, ch_list in enumerate(cycle_CHs[:cycle_idx], start=1):
+    cycle_start = start_time + timedelta(minutes=(idx-1)*cycle_duration)
+    cycle_end = cycle_start + timedelta(minutes=cycle_duration)
+    path_points = [BS_POSITION[0]] + [final_CHs[i] for i in ch_list] + [BS_POSITION[0]]
+    
+    total_dist = 0
+    for step, (current, nxt) in enumerate(zip(path_points[:-1], path_points[1:]), start=1):
+        dist = np.linalg.norm(nxt-current)
+        total_dist += dist
+        
+        # التحقق من Predicted_Ir
+        pred_ir = "-"
+        match = [i for i in ch_list if np.allclose(final_CHs[i], current)]
+        if match:
+            ch_idx = match[0]
+            pred_ir = round(ch_agg.loc[ch_agg['CH_id']==ch_idx,'Predicted_Ir'].values[0],3)
+        
+        rows.append({
+            "Cycle": idx,
+            "Step": step,
+            "X": round(current[0],3),
+            "Y": round(current[1],3),
+            "Distance_to_next": round(dist,3),
+            "Predicted_Ir": pred_ir
+        })
+    
+    # خطوة العودة للـ BS
+    rows.append({
+        "Cycle": idx,
+        "Step": len(path_points),
+        "X": round(path_points[-1][0],3),
+        "Y": round(path_points[-1][1],3),
+        "Distance_to_next": np.nan,
+        "Predicted_Ir": "-"
+    })
+
+df_cycles = pd.DataFrame(rows)
+st.subheader(f"📋 جدول مسار الدرون حتى الدورة {cycle_idx}")
+st.dataframe(df_cycles)
 
         # ===== تنبيهات الري =====
         st.subheader("⚠️ تنبيهات الري")
