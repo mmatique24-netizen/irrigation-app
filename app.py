@@ -119,31 +119,23 @@ if uploaded_file:
         st.subheader("📊 تنبؤ الري لكل CH")
         st.dataframe(ch_agg[['CH_id', 'Predicted_Ir']])
 
-        # ===== 11) تنبيهات الري =====
-        st.subheader("⚠️ تنبيهات الري")
-        for i, row in ch_agg.iterrows():
-            ir = row['Predicted_Ir']
-            if ir > 2.0:
-                msg = "❌ رطوبة منخفضة — يلزم الري الفوري"
-            elif ir < 1.0:
-                msg = "✅ رطوبة مناسبة"
-            else:
-                msg = "⚠️ رطوبة معتدلة — راقب الحقل"
-            st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
+        # ===== 11) رسم مسار الدرون الديناميكي + Base Station + جدول دوري =====
+        BS = np.array([[FIELD_SIZE/2, FIELD_SIZE + 10]])  # Base Station
+        drone_tour_order = list(tsp_path) + ["BS"]
 
-        # ===== 12) ميزة تفاعلية لمسار الدرون مع IR وBase Station =====
         st.sidebar.header("عرض مسار الدرون الديناميكي")
-        show_drone_path = st.sidebar.checkbox("عرض مسار الدرون خطوة خطوة مع IR وBS", value=True)
+        show_drone_path = st.sidebar.checkbox("عرض مسار الدرون خطوة خطوة مع IR وعودة إلى BS", value=True)
 
         if show_drone_path:
-            st.subheader("🚁 مسار الدرون خطوة خطوة مع تغير IR وBase Station")
-            max_cycle = len(tsp_path)
+            st.subheader("🚁 مسار الدرون خطوة خطوة مع تغير IR وعودة إلى Base Station")
+            max_cycle = len(drone_tour_order)
             cycle_idx = st.slider("اختر الدورة الزمنية (Cycle)", 1, max_cycle, 1)
 
             fig, ax = plt.subplots(figsize=(8,8))
             ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, label='Sensors')
+            ax.scatter(BS[:,0], BS[:,1], c='purple', s=150, marker='*', label='Base Station')
 
-            # رسم CHs حسب IR
+            # تلوين CHs حسب IR إذا تم زيارتها
             colors = []
             for idx in range(len(final_CHs)):
                 if idx in tsp_path[:cycle_idx]:
@@ -160,18 +152,15 @@ if uploaded_file:
 
             # مسار الدرون حتى الدورة الحالية
             path_points = final_CHs[list(tsp_path)[:cycle_idx]]
+            if cycle_idx > len(tsp_path):
+                path_points = np.vstack([path_points, BS])
             ax.plot(path_points[:,0], path_points[:,1], c='black', linestyle='-', marker='o', label='Drone Path')
 
-            # ===== إضافة Base Station =====
-            BS_position = np.array([FIELD_SIZE/2, FIELD_SIZE + 10])
-            ax.scatter(BS_position[0], BS_position[1], c='blue', s=150, marker='*', label='Base Station')
-
             # رسم اتصال الدرون بالـ BS بعد آخر CH مرورًا بالمسار
-            if cycle_idx > 0:
+            if cycle_idx > 0 and cycle_idx <= len(tsp_path):
                 last_ch_idx = tsp_path[cycle_idx-1]
                 last_ch = final_CHs[last_ch_idx]
-                ax.plot([last_ch[0], BS_position[0]], [last_ch[1], BS_position[1]],
-                        c='blue', linestyle='--', linewidth=2, label='Drone → BS')
+                ax.plot([last_ch[0], BS[0,0]], [last_ch[1], BS[0,1]], c='blue', linestyle='--', linewidth=2, label='Drone → BS')
 
             # دائرة TX_RANGE لكل CH
             for ch in final_CHs:
@@ -183,3 +172,26 @@ if uploaded_file:
             ax.set_ylabel("Y (m)")
             ax.legend(loc='upper right')
             st.pyplot(fig)
+
+            # ===== عرض جدول دوري لمسار الدرون =====
+            tour_table = []
+            for i, stop in enumerate(drone_tour_order[:cycle_idx]):
+                if stop == "BS":
+                    tour_table.append({"Step": i+1, "Visited": "Base Station"})
+                else:
+                    ir = ch_agg.loc[ch_agg['CH_id'] == stop, 'Predicted_Ir'].values[0]
+                    tour_table.append({"Step": i+1, "Visited": f"CH {stop}", "Predicted_Ir": round(ir, 2)})
+            st.subheader("📋 جدول دوري لمسار الدرون")
+            st.table(pd.DataFrame(tour_table))
+
+        # ===== 12) تنبيهات الري =====
+        st.subheader("⚠️ تنبيهات الري")
+        for i, row in ch_agg.iterrows():
+            ir = row['Predicted_Ir']
+            if ir > 2.0:
+                msg = "❌ رطوبة منخفضة — يلزم الري الفوري"
+            elif ir < 1.0:
+                msg = "✅ رطوبة مناسبة"
+            else:
+                msg = "⚠️ رطوبة معتدلة — راقب الحقل"
+            st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
