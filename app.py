@@ -127,8 +127,6 @@ st.sidebar.header("تفاعلية مسار الدرون مع TDMA")
 cycle_duration = st.sidebar.number_input("مدة الدورة الزمنية لكل دورة (دقيقة)", min_value=1, value=20)
 total_hours = st.sidebar.number_input("إجمالي ساعات التشغيل", min_value=1, value=3)
 total_cycles = (total_hours * 60) // cycle_duration
-if total_cycles == 0:
-    total_cycles = 1
 st.sidebar.write(f"عدد الدورات الكلي = {total_cycles}")
 
 # ===== Slider لاختيار الدورة الحالية =====
@@ -141,7 +139,7 @@ if ch_per_cycle == 0:
 
 # تحديد CHs التي سيتم زيارتها في الدورة الحالية
 end_idx = min(cycle_idx * ch_per_cycle, len(tsp_path))
-current_CHs = np.array(tsp_path[:end_idx])
+current_CHs = tsp_path[:end_idx]
 
 # ===== رسم المسار الديناميكي مع TDMA =====
 fig, ax = plt.subplots(figsize=(8,8))
@@ -190,7 +188,7 @@ st.pyplot(fig)
 
 # ===== جدول دوري لمسار الدرون =====
 tour_table = []
-for i, stop in enumerate(list(current_CHs) + ["BS"]):
+for i, stop in enumerate(drone_tour_order[:end_idx] + ["BS"]):
     if stop == "BS":
         tour_table.append({"Step": i+1, "Visited": "Base Station"})
     else:
@@ -200,9 +198,6 @@ for i, stop in enumerate(list(current_CHs) + ["BS"]):
 st.subheader("📋 جدول دوري لمسار الدرون")
 st.table(pd.DataFrame(tour_table))
 
-       
-
-               
 
        # ===== 11) تنبيهات الري (تم تعديل الحدود) =====
 st.subheader("⚠️ تنبيهات الري")
