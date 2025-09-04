@@ -208,15 +208,16 @@ for idx, ch_list in enumerate(cycle_CHs[:cycle_idx], start=1):
 df_cycles = pd.DataFrame(rows)
 st.subheader(f"📋 جدول مسار الدرون حتى الدورة {cycle_idx}")
 st.dataframe(df_cycles)
+# ===== 12) تنبيهات الري =====
+st.subheader("⚠️ تنبيهات الري")
+for i, row in ch_agg.iterrows():
+    ir = row['Predicted_Ir']
+    if ir > 1.5:
+        msg = "❌ رطوبة منخفضة — يلزم الري الفوري"
+    elif 0.5 <= ir <= 1.5:
+        msg = "⚠️ رطوبة معتدلة — راقب الحقل"
+    else:  # ir < 0.5
+        msg = "✅ رطوبة مناسبة"
+    st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
 
-        # ===== تنبيهات الري =====
-        st.subheader("⚠️ تنبيهات الري")
-        for i, row in ch_agg.iterrows():
-            ir = row['Predicted_Ir']
-            if ir > 1.5:
-                msg = "❌ رطوبة منخفضة — يلزم الري الفوري"
-            elif 0.5 <= ir <= 1.5:
-                msg = "⚠️ رطوبة معتدلة — راقب الحقل"
-            else:
-                msg = "✅ رطوبة مناسبة"
-            st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
+       
