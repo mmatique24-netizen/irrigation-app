@@ -131,18 +131,19 @@ if uploaded_file:
                 msg = "⚠️ رطوبة معتدلة — راقب الحقل"
             st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
 
-        # ===== 12) ميزة تفاعلية لمسار الدرون مع IR =====
+        # ===== 12) ميزة تفاعلية لمسار الدرون مع IR وBase Station =====
         st.sidebar.header("عرض مسار الدرون الديناميكي")
-        show_drone_path = st.sidebar.checkbox("عرض مسار الدرون خطوة خطوة مع IR", value=True)
+        show_drone_path = st.sidebar.checkbox("عرض مسار الدرون خطوة خطوة مع IR وBS", value=True)
 
         if show_drone_path:
-            st.subheader("🚁 مسار الدرون خطوة خطوة مع تغير IR")
+            st.subheader("🚁 مسار الدرون خطوة خطوة مع تغير IR وBase Station")
             max_cycle = len(tsp_path)
             cycle_idx = st.slider("اختر الدورة الزمنية (Cycle)", 1, max_cycle, 1)
 
             fig, ax = plt.subplots(figsize=(8,8))
             ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, label='Sensors')
 
+            # رسم CHs حسب IR
             colors = []
             for idx in range(len(final_CHs)):
                 if idx in tsp_path[:cycle_idx]:
@@ -157,14 +158,27 @@ if uploaded_file:
                     colors.append('gray')
             ax.scatter(final_CHs[:,0], final_CHs[:,1], c=colors, s=120, marker='X', label='CHs')
 
+            # مسار الدرون حتى الدورة الحالية
             path_points = final_CHs[list(tsp_path)[:cycle_idx]]
             ax.plot(path_points[:,0], path_points[:,1], c='black', linestyle='-', marker='o', label='Drone Path')
 
+            # ===== إضافة Base Station =====
+            BS_position = np.array([FIELD_SIZE/2, FIELD_SIZE + 10])
+            ax.scatter(BS_position[0], BS_position[1], c='blue', s=150, marker='*', label='Base Station')
+
+            # رسم اتصال الدرون بالـ BS بعد آخر CH مرورًا بالمسار
+            if cycle_idx > 0:
+                last_ch_idx = tsp_path[cycle_idx-1]
+                last_ch = final_CHs[last_ch_idx]
+                ax.plot([last_ch[0], BS_position[0]], [last_ch[1], BS_position[1]],
+                        c='blue', linestyle='--', linewidth=2, label='Drone → BS')
+
+            # دائرة TX_RANGE لكل CH
             for ch in final_CHs:
                 circle = Circle((ch[0], ch[1]), TX_RANGE, color='green', alpha=0.1)
                 ax.add_patch(circle)
 
-            ax.set_title(f"Cycle {cycle_idx}/{max_cycle} - Drone Tour & CH IR")
+            ax.set_title(f"Cycle {cycle_idx}/{max_cycle} - Drone Tour, CH IR & Base Station")
             ax.set_xlabel("X (m)")
             ax.set_ylabel("Y (m)")
             ax.legend(loc='upper right')
