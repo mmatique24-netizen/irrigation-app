@@ -123,11 +123,6 @@ if uploaded_file:
         BS = np.array([[FIELD_SIZE/2, FIELD_SIZE + 10]])  # Base Station
         drone_tour_order = list(tsp_path) + ["BS"]
 
-        import streamlit as st
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from datetime import timedelta
 
 st.set_page_config(page_title="Drone TDMA Path", layout="wide")
 st.title("🌱 مسار الدرون الديناميكي مع TDMA")
