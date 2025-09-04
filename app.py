@@ -7,59 +7,12 @@ from sklearn.impute import SimpleImputer
 from sklearn.cluster import KMeans
 from itertools import permutations
 from matplotlib.patches import Circle
+from kneed import KneeLocator
 
 st.set_page_config(page_title="Smart Irrigation Advanced", layout="wide")
 st.title("🌱 إدارة الري الذكي مع مسار الدرون")
-# ===== ميزة تفاعلية لمسار الدرون مع تغير IR لكل دورة =====
-st.sidebar.header("عرض مسار الدرون الديناميكي")
-show_drone_path = st.sidebar.checkbox("عرض مسار الدرون خطوة خطوة مع IR", value=True)
 
-if show_drone_path and uploaded_file:
-    st.subheader("🚁 مسار الدرون خطوة خطوة مع تغير IR")
-    
-    # اختيار CH و IR الفعلي من ch_agg بعد المعالجة
-    if 'ch_agg' in locals() and 'final_CHs' in locals() and 'tsp_path' in locals():
-        max_cycle = len(tsp_path)
-        cycle_idx = st.slider("اختر الدورة الزمنية (Cycle)", 1, max_cycle, 1)
-        
-        fig, ax = plt.subplots(figsize=(8,8))
-        
-        # رسم الحساسات
-        ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, label='Sensors')
-        
-        # رسم CHs وتلوين حسب IR حتى الدورة الحالية
-        colors = []
-        for idx in range(len(final_CHs)):
-            if idx in tsp_path[:cycle_idx]:
-                ir = ch_agg.loc[ch_agg['CH_id'] == idx, 'Predicted_Ir'].values[0]
-                if ir > 2.0:
-                    colors.append('red')
-                elif ir < 1.0:
-                    colors.append('green')
-                else:
-                    colors.append('yellow')
-            else:
-                colors.append('gray')  # CHs التي لم يمر بها الدرون بعد
-        
-        ax.scatter(final_CHs[:,0], final_CHs[:,1], c=colors, s=120, marker='X', label='CHs')
-        
-        # رسم مسار الدرون حتى الدورة المحددة
-        path_points = final_CHs[list(tsp_path)[:cycle_idx]]
-        ax.plot(path_points[:,0], path_points[:,1], c='black', linestyle='-', marker='o', label='Drone Path')
-        
-        # إضافة دائرة TX_RANGE لكل CH
-        for ch in final_CHs:
-            circle = Circle((ch[0], ch[1]), TX_RANGE, color='green', alpha=0.1)
-            ax.add_patch(circle)
-        
-        ax.set_title(f"Cycle {cycle_idx}/{max_cycle} - Drone Tour & CH IR")
-        ax.set_xlabel("X (m)")
-        ax.set_ylabel("Y (m)")
-        ax.legend(loc='upper right')
-        st.pyplot(fig)
-
-
-# ===== 1) بيانات الحقل =====
+# ===== 1) إعدادات الحقل =====
 st.sidebar.header("إعدادات الحقل")
 FIELD_SIZE = st.sidebar.number_input("مساحة الحقل (m²)", min_value=10, value=100)
 NUM_SENSORS = st.sidebar.number_input("عدد الحساسات", min_value=5, value=50)
@@ -72,7 +25,7 @@ uploaded_file = st.sidebar.file_uploader("اختر ملف CSV", type="csv")
 if uploaded_file:
     data = pd.read_csv(uploaded_file)
     st.success(f"✅ تم تحميل البيانات! شكل البيانات: {data.shape}")
-    
+
     required_cols = ["temperature", "humidity", "rainfall", "growth_stage"]
     if not all(col in data.columns for col in required_cols):
         st.error(f"الملف يجب أن يحتوي على الأعمدة: {required_cols}")
@@ -94,7 +47,6 @@ if uploaded_file:
         for k in range(2, K_max + 1):
             km = KMeans(n_clusters=k, random_state=0, n_init=10).fit(sensor_positions)
             sse.append(km.inertia_)
-        from kneed import KneeLocator
         kl = KneeLocator(range(2, K_max + 1), sse, curve="convex", direction="decreasing")
         best_k = kl.knee if kl.knee else 2
         st.write(f"✅ أفضل عدد أولي للعناقيد (CHs) = {best_k}")
@@ -137,7 +89,7 @@ if uploaded_file:
             best_path = None
             for perm in permutations(range(n)):
                 dist = sum(np.linalg.norm(points[perm[i]] - points[perm[i+1]]) for i in range(n-1))
-                dist += np.linalg.norm(points[perm[-1]] - points[perm[0]])  # العودة للنقطة الأولى
+                dist += np.linalg.norm(points[perm[-1]] - points[perm[0]])
                 if dist < min_dist:
                     min_dist = dist
                     best_path = perm
@@ -178,3 +130,42 @@ if uploaded_file:
             else:
                 msg = "⚠️ رطوبة معتدلة — راقب الحقل"
             st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
+
+        # ===== 12) ميزة تفاعلية لمسار الدرون مع IR =====
+        st.sidebar.header("عرض مسار الدرون الديناميكي")
+        show_drone_path = st.sidebar.checkbox("عرض مسار الدرون خطوة خطوة مع IR", value=True)
+
+        if show_drone_path:
+            st.subheader("🚁 مسار الدرون خطوة خطوة مع تغير IR")
+            max_cycle = len(tsp_path)
+            cycle_idx = st.slider("اختر الدورة الزمنية (Cycle)", 1, max_cycle, 1)
+
+            fig, ax = plt.subplots(figsize=(8,8))
+            ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, label='Sensors')
+
+            colors = []
+            for idx in range(len(final_CHs)):
+                if idx in tsp_path[:cycle_idx]:
+                    ir = ch_agg.loc[ch_agg['CH_id'] == idx, 'Predicted_Ir'].values[0]
+                    if ir > 2.0:
+                        colors.append('red')
+                    elif ir < 1.0:
+                        colors.append('green')
+                    else:
+                        colors.append('yellow')
+                else:
+                    colors.append('gray')
+            ax.scatter(final_CHs[:,0], final_CHs[:,1], c=colors, s=120, marker='X', label='CHs')
+
+            path_points = final_CHs[list(tsp_path)[:cycle_idx]]
+            ax.plot(path_points[:,0], path_points[:,1], c='black', linestyle='-', marker='o', label='Drone Path')
+
+            for ch in final_CHs:
+                circle = Circle((ch[0], ch[1]), TX_RANGE, color='green', alpha=0.1)
+                ax.add_patch(circle)
+
+            ax.set_title(f"Cycle {cycle_idx}/{max_cycle} - Drone Tour & CH IR")
+            ax.set_xlabel("X (m)")
+            ax.set_ylabel("Y (m)")
+            ax.legend(loc='upper right')
+            st.pyplot(fig)
