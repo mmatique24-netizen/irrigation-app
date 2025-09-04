@@ -34,8 +34,7 @@ if uploaded_file:
         # ===== 3) معالجة البيانات =====
         df = data[required_cols].copy()
         df['moisture'] = 0.5 * df['humidity'] + 0.5 * df['rainfall']
-        eps = 1e-8
-        df['Ir'] = df['temperature'] / (df['moisture'] + eps)
+        df['Ir'] = df['temperature'] / (df['moisture'] + 1e-8)
         st.write("✅ تم معالجة البيانات وحساب moisture و Ir")
         st.dataframe(df.head())
 
@@ -127,101 +126,82 @@ if uploaded_file:
         total_cycles = (total_hours*60)//cycle_duration
         st.sidebar.write(f"عدد الدورات الكلي = {total_cycles}")
 
-        cycle_idx = st.sidebar.slider("اختر الدورة الزمنية", 1, total_cycles, 1)
-
         BS_POSITION = np.array([FIELD_SIZE/2, FIELD_SIZE + 10])
         cycle_CHs = np.array_split(tsp_path, total_cycles)
 
-      # ===== رسم مسار الدرون لكل الدورات دفعة واحدة =====
-fig, ax = plt.subplots(figsize=(8,8))
-ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, s=80, label='Sensors')
-ax.scatter(final_CHs[:,0], final_CHs[:,1], c='green', s=120, marker='X', edgecolor='black', label='CHs')
-ax.scatter(BS_POSITION[0], BS_POSITION[1], c='red', s=150, marker='*', label='Base Station')
+        # ===== رسم مسار الدرون لكل الدورات دفعة واحدة =====
+        fig2, ax2 = plt.subplots(figsize=(8,8))
+        ax2.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, s=80, label='Sensors')
+        ax2.scatter(final_CHs[:,0], final_CHs[:,1], c='green', s=120, marker='X', edgecolor='black', label='CHs')
+        ax2.scatter(BS_POSITION[0], BS_POSITION[1], c='red', s=150, marker='*', label='Base Station')
 
-colors = plt.cm.get_cmap('tab10', total_cycles)  # ألوان لكل دورة
+        colors = plt.cm.get_cmap('tab10', total_cycles)  # ألوان لكل دورة
 
-for idx, ch_list in enumerate(cycle_CHs, start=1):
-    path_points = [BS_POSITION] + [final_CHs[i] for i in ch_list] + [BS_POSITION]
-    path_points = np.array(path_points)
-    
-    # تلوين CH حسب Predicted_Ir
-    ch_colors = []
-    for ch in [BS_POSITION] + [final_CHs[i] for i in ch_list]:
-        if np.allclose(ch, BS_POSITION):
-            ch_colors.append('red')
-        else:
-            ch_idx = np.where(np.all(np.isclose(final_CHs, ch), axis=1))[0][0]
-            ir = ch_agg.loc[ch_agg['CH_id']==ch_idx,'Predicted_Ir'].values[0]
+        for idx, ch_list in enumerate(cycle_CHs, start=1):
+            path_points = [BS_POSITION] + [final_CHs[i] for i in ch_list] + [BS_POSITION]
+            path_points = np.array(path_points)
+            ax2.plot(path_points[:,0], path_points[:,1], linestyle='-', marker='o', color=colors(idx-1), label=f'Cycle {idx}')
+
+        ax2.set_title("مسار الدرون لكل الدورات", fontsize=14)
+        ax2.set_xlabel("X (m)")
+        ax2.set_ylabel("Y (m)")
+        ax2.legend(loc='upper right')
+        ax2.grid(True)
+        ax2.axis('equal')
+        st.pyplot(fig2)
+
+        # ===== جدول الدورات =====
+        rows = []
+        start_time = pd.Timestamp("2025-01-01 08:00:00")
+
+        for idx, ch_list in enumerate(cycle_CHs, start=1):
+            cycle_start = start_time + timedelta(minutes=(idx-1)*cycle_duration)
+            cycle_end = cycle_start + timedelta(minutes=cycle_duration)
+            path_points = [BS_POSITION] + [final_CHs[i] for i in ch_list] + [BS_POSITION]
+
+            total_dist = 0
+            for step, (current, nxt) in enumerate(zip(path_points[:-1], path_points[1:]), start=1):
+                dist = np.linalg.norm(nxt-current)
+                total_dist += dist
+
+                # التحقق من Predicted_Ir
+                pred_ir = "-"
+                match = [i for i in ch_list if np.allclose(final_CHs[i], current)]
+                if match:
+                    ch_idx = match[0]
+                    pred_ir = round(ch_agg.loc[ch_agg['CH_id']==ch_idx,'Predicted_Ir'].values[0],3)
+
+                rows.append({
+                    "Cycle": idx,
+                    "Step": step,
+                    "X": round(current[0],3),
+                    "Y": round(current[1],3),
+                    "Distance_to_next": round(dist,3),
+                    "Predicted_Ir": pred_ir
+                })
+
+            # خطوة العودة للـ BS
+            rows.append({
+                "Cycle": idx,
+                "Step": len(path_points),
+                "X": round(path_points[-1][0],3),
+                "Y": round(path_points[-1][1],3),
+                "Distance_to_next": np.nan,
+                "Predicted_Ir": "-"
+            })
+
+        df_cycles = pd.DataFrame(rows)
+        st.subheader("📋 جدول مسار الدرون لكل الدورات")
+        st.dataframe(df_cycles)
+
+        # ===== 12) تنبيهات الري =====
+        st.subheader("⚠️ تنبيهات الري")
+        for i, row in ch_agg.iterrows():
+            ir = row['Predicted_Ir']
             if ir > 1.5:
-                ch_colors.append('red')
-            elif ir < 0.5:
-                ch_colors.append('green')
+                msg = "❌ رطوبة منخفضة — يلزم الري الفوري"
+            elif 0.5 <= ir <= 1.5:
+                msg = "⚠️ رطوبة معتدلة — راقب الحقل"
             else:
-                ch_colors.append('yellow')
-    
-    ax.plot(path_points[:,0], path_points[:,1], linestyle='-', marker='o', color=colors(idx-1), label=f'Cycle {idx}')
-    ax.scatter(path_points[1:-1,0], path_points[1:-1,1], c=ch_colors[1:-1], s=120, marker='X')  # CHs
-
-ax.set_title("Drone Path Visiting All CHs (All Cycles)", fontsize=14)
-ax.set_xlabel("X (m)")
-ax.set_ylabel("Y (m)")
-ax.legend(loc='upper right')
-ax.grid(True)
-ax.axis('equal')
-st.pyplot(fig)
-# ===== جدول الدورات =====
-from datetime import timedelta
-
-rows = []  # ← تأكد أن هذا السطر ليس بداخله مسافة غير صحيحة
-start_time = pd.Timestamp("2025-01-01 08:00:00")
-
-for idx, ch_list in enumerate(cycle_CHs, start=1):
-    cycle_start = start_time + timedelta(minutes=(idx-1)*cycle_duration)
-    cycle_end = cycle_start + timedelta(minutes=cycle_duration)
-    path_points = [BS_POSITION] + [final_CHs[i] for i in ch_list] + [BS_POSITION]
-
-    total_dist = 0
-    for step, (current, nxt) in enumerate(zip(path_points[:-1], path_points[1:]), start=1):
-        dist = np.linalg.norm(nxt-current)
-        total_dist += dist
-
-        # التحقق من Predicted_Ir
-        pred_ir = "-"
-        match = [i for i in ch_list if np.allclose(final_CHs[i], current)]
-        if match:
-            ch_idx = match[0]
-            pred_ir = round(ch_agg.loc[ch_agg['CH_id']==ch_idx,'Predicted_Ir'].values[0],3)
-
-        rows.append({
-            "Cycle": idx,
-            "Step": step,
-            "X": round(current[0],3),
-            "Y": round(current[1],3),
-            "Distance_to_next": round(dist,3),
-            "Predicted_Ir": pred_ir
-        })
-
-    # خطوة العودة للـ BS
-    rows.append({
-        "Cycle": idx,
-        "Step": len(path_points),
-        "X": round(path_points[-1][0],3),
-        "Y": round(path_points[-1][1],3),
-        "Distance_to_next": np.nan,
-        "Predicted_Ir": "-"
-    })
-
-df_cycles = pd.DataFrame(rows)
-st.subheader("📋 جدول مسار الدرون لكل الدورات")
-st.dataframe(df_cycles)
-# ===== 12) تنبيهات الري =====
-st.subheader("⚠️ تنبيهات الري")
-for i, row in ch_agg.iterrows():
-    ir = row['Predicted_Ir']
-    if ir > 1.5:
-        msg = "❌ رطوبة منخفضة — يلزم الري الفوري"
-    elif 0.5 <= ir <= 1.5:
-        msg = "⚠️ رطوبة معتدلة — راقب الحقل"
-    else:  # ir < 0.5
-        msg = "✅ رطوبة مناسبة"
-    st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
+                msg = "✅ رطوبة مناسبة"
+            st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
