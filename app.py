@@ -169,56 +169,59 @@ ax.legend(loc='upper right')
 ax.grid(True)
 ax.axis('equal')
 st.pyplot(fig)
+# ===== جدول الدورات =====
+from datetime import timedelta
 
+rows = []  # ← تأكد أن هذا السطر ليس بداخله مسافة غير صحيحة
+start_time = pd.Timestamp("2025-01-01 08:00:00")
 
-        # ===== جدول الدورات =====
-        rows = []
-        start_time = pd.Timestamp("2025-01-01 08:00:00")
+for idx, ch_list in enumerate(cycle_CHs, start=1):
+    cycle_start = start_time + timedelta(minutes=(idx-1)*cycle_duration)
+    cycle_end = cycle_start + timedelta(minutes=cycle_duration)
+    path_points = [BS_POSITION] + [final_CHs[i] for i in ch_list] + [BS_POSITION]
 
-        for idx, ch_list in enumerate(cycle_CHs[:cycle_idx], start=1):
-            cycle_start = start_time + timedelta(minutes=(idx-1)*cycle_duration)
-            cycle_end = cycle_start + timedelta(minutes=cycle_duration)
-            path_points = [BS_POSITION] + [final_CHs[i] for i in ch_list] + [BS_POSITION]
+    total_dist = 0
+    for step, (current, nxt) in enumerate(zip(path_points[:-1], path_points[1:]), start=1):
+        dist = np.linalg.norm(nxt-current)
+        total_dist += dist
 
-            total_dist = 0
-            for step, (current, nxt) in enumerate(zip(path_points[:-1], path_points[1:]), start=1):
-                dist = np.linalg.norm(nxt-current)
-                total_dist += dist
-                pred_ir = "-"
-                match = [i for i in ch_list if np.allclose(final_CHs[i], current)]
-                if match:
-                    ch_idx = match[0]
-                    pred_ir = round(ch_agg.loc[ch_agg['CH_id']==ch_idx,'Predicted_Ir'].values[0],3)
-                rows.append({
-                    "Cycle": idx,
-                    "Step": step,
-                    "X": round(current[0],3),
-                    "Y": round(current[1],3),
-                    "Distance_to_next": round(dist,3),
-                    "Predicted_Ir": pred_ir
-                })
-            # العودة للـ BS
-            rows.append({
-                "Cycle": idx,
-                "Step": len(path_points),
-                "X": round(path_points[-1][0],3),
-                "Y": round(path_points[-1][1],3),
-                "Distance_to_next": np.nan,
-                "Predicted_Ir": "-"
-            })
+        # التحقق من Predicted_Ir
+        pred_ir = "-"
+        match = [i for i in ch_list if np.allclose(final_CHs[i], current)]
+        if match:
+            ch_idx = match[0]
+            pred_ir = round(ch_agg.loc[ch_agg['CH_id']==ch_idx,'Predicted_Ir'].values[0],3)
 
-        df_cycles = pd.DataFrame(rows)
-        st.subheader(f"📋 جدول مسار الدرون حتى الدورة {cycle_idx}")
-        st.dataframe(df_cycles)
+        rows.append({
+            "Cycle": idx,
+            "Step": step,
+            "X": round(current[0],3),
+            "Y": round(current[1],3),
+            "Distance_to_next": round(dist,3),
+            "Predicted_Ir": pred_ir
+        })
 
-        # ===== 12) تنبيهات الري =====
-        st.subheader("⚠️ تنبيهات الري")
-        for i, row in ch_agg.iterrows():
-            ir = row['Predicted_Ir']
-            if ir > 1.5:
-                msg = "❌ رطوبة منخفضة — يلزم الري الفوري"
-            elif 0.5 <= ir <= 1.5:
-                msg = "⚠️ رطوبة معتدلة — راقب الحقل"
-            else:
-                msg = "✅ رطوبة مناسبة"
-            st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
+    # خطوة العودة للـ BS
+    rows.append({
+        "Cycle": idx,
+        "Step": len(path_points),
+        "X": round(path_points[-1][0],3),
+        "Y": round(path_points[-1][1],3),
+        "Distance_to_next": np.nan,
+        "Predicted_Ir": "-"
+    })
+
+df_cycles = pd.DataFrame(rows)
+st.subheader("📋 جدول مسار الدرون لكل الدورات")
+st.dataframe(df_cycles)
+# ===== 12) تنبيهات الري =====
+st.subheader("⚠️ تنبيهات الري")
+for i, row in ch_agg.iterrows():
+    ir = row['Predicted_Ir']
+    if ir > 1.5:
+        msg = "❌ رطوبة منخفضة — يلزم الري الفوري"
+    elif 0.5 <= ir <= 1.5:
+        msg = "⚠️ رطوبة معتدلة — راقب الحقل"
+    else:  # ir < 0.5
+        msg = "✅ رطوبة مناسبة"
+    st.write(f"CH {row['CH_id']}: {ir:.2f} → {msg}")
