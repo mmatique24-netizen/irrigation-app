@@ -132,27 +132,44 @@ if uploaded_file:
         BS_POSITION = np.array([FIELD_SIZE/2, FIELD_SIZE + 10])
         cycle_CHs = np.array_split(tsp_path, total_cycles)
 
-        # ===== رسم المسار الديناميكي =====
-        fig, ax = plt.subplots(figsize=(8,8))
-        ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, s=80, label='Sensors')
-        ax.scatter(final_CHs[:,0], final_CHs[:,1], c='green', s=120, marker='X', edgecolor='black', label='CHs')
-        ax.scatter(BS_POSITION[0], BS_POSITION[1], c='red', s=150, marker='*', label='Base Station')
+      # ===== رسم مسار الدرون لكل الدورات دفعة واحدة =====
+fig, ax = plt.subplots(figsize=(8,8))
+ax.scatter(sensor_positions[:,0], sensor_positions[:,1], c='lightblue', alpha=0.6, s=80, label='Sensors')
+ax.scatter(final_CHs[:,0], final_CHs[:,1], c='green', s=120, marker='X', edgecolor='black', label='CHs')
+ax.scatter(BS_POSITION[0], BS_POSITION[1], c='red', s=150, marker='*', label='Base Station')
 
-        colors = plt.cm.get_cmap('tab10', total_cycles)
+colors = plt.cm.get_cmap('tab10', total_cycles)  # ألوان لكل دورة
 
-        for idx, ch_list in enumerate(cycle_CHs[:cycle_idx], start=1):
-            path_points = [BS_POSITION] + [final_CHs[i] for i in ch_list] + [BS_POSITION]
-            path_points = np.array(path_points)
-            ax.plot(path_points[:,0], path_points[:,1], linestyle='-', marker='o',
-                    color=colors(idx-1), label=f'Cycle {idx}')
+for idx, ch_list in enumerate(cycle_CHs, start=1):
+    path_points = [BS_POSITION] + [final_CHs[i] for i in ch_list] + [BS_POSITION]
+    path_points = np.array(path_points)
+    
+    # تلوين CH حسب Predicted_Ir
+    ch_colors = []
+    for ch in [BS_POSITION] + [final_CHs[i] for i in ch_list]:
+        if np.allclose(ch, BS_POSITION):
+            ch_colors.append('red')
+        else:
+            ch_idx = np.where(np.all(np.isclose(final_CHs, ch), axis=1))[0][0]
+            ir = ch_agg.loc[ch_agg['CH_id']==ch_idx,'Predicted_Ir'].values[0]
+            if ir > 1.5:
+                ch_colors.append('red')
+            elif ir < 0.5:
+                ch_colors.append('green')
+            else:
+                ch_colors.append('yellow')
+    
+    ax.plot(path_points[:,0], path_points[:,1], linestyle='-', marker='o', color=colors(idx-1), label=f'Cycle {idx}')
+    ax.scatter(path_points[1:-1,0], path_points[1:-1,1], c=ch_colors[1:-1], s=120, marker='X')  # CHs
 
-        ax.set_title(f"Drone Path with TDMA (Up to Cycle {cycle_idx})", fontsize=14)
-        ax.set_xlabel("X (m)")
-        ax.set_ylabel("Y (m)")
-        ax.legend()
-        ax.grid(True)
-        ax.axis('equal')
-        st.pyplot(fig)
+ax.set_title("Drone Path Visiting All CHs (All Cycles)", fontsize=14)
+ax.set_xlabel("X (m)")
+ax.set_ylabel("Y (m)")
+ax.legend(loc='upper right')
+ax.grid(True)
+ax.axis('equal')
+st.pyplot(fig)
+
 
         # ===== جدول الدورات =====
         rows = []
